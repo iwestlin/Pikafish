@@ -1,0 +1,59 @@
+name: Legacy Linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86-64-bmi2
+            suffix: bmi2
+          - arch: x86-64-modern
+            suffix: modern
+          - arch: x86-64
+            suffix: generic
+
+    name: Linux ${{ matrix.suffix }} (glibc 2.23)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build in Ubuntu 16.04
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            ubuntu:16.04 \
+            bash -c '
+              set -eux
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates apt-transport-https binutils make
+              echo "deb [trusted=yes] https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/gcc.list
+              apt-get update
+              apt-get install -y --no-install-recommends g++-9
+              cd src
+              make clean
+              make -j"$(nproc)" build COMP=gcc COMPCXX=g++-9 ARCH=${{ matrix.arch }} EXE=pikafish-${{ matrix.suffix }}
+              strip pikafish-${{ matrix.suffix }}
+              chmod 0755 pikafish-${{ matrix.suffix }}
+            '
+
+      - name: Check required GLIBC symbols
+        run: |
+          objdump -T src/pikafish-${{ matrix.suffix }} | grep GLIBC_ | sed 's/.*GLIBC_\([0-9.]*\).*/\1/' | sort -Vu | tail -5
+
+      - name: Package artifact files
+        run: |
+          mkdir -p linux-${{ matrix.suffix }}
+          cp src/pikafish-${{ matrix.suffix }} linux-${{ matrix.suffix }}/
+          cp AUTHORS Copying.txt NNUE-License.txt README.md linux-${{ matrix.suffix }}/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pikafish-legacy-linux-${{ matrix.suffix }}
+          path: linux-${{ matrix.suffix }}

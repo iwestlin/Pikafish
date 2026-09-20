@@ -3,9 +3,9 @@ name: Pikafish
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - jieqi_old
+  # push:
+  #   branches:
+  #     - jieqi_old
 
 jobs:
   windows:
