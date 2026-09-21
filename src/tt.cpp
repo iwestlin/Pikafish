@@ -73,7 +73,11 @@ void TranspositionTable::resize(size_t mbSize) {
   {
       std::cerr << "Failed to allocate " << mbSize
                 << "MB for transposition table." << std::endl;
+#if defined(__EMSCRIPTEN__)
+      return;
+#else
       exit(EXIT_FAILURE);
+#endif
   }
 
   clear();
@@ -85,6 +89,9 @@ void TranspositionTable::resize(size_t mbSize) {
 
 void TranspositionTable::clear() {
 
+#if defined(PIKAFISH_SINGLE_THREAD)
+  std::memset(&table[0], 0, clusterCount * sizeof(Cluster));
+#else
   std::vector<std::thread> threads;
 
   for (size_t idx = 0; idx < Options["Threads"]; ++idx)
@@ -107,6 +114,7 @@ void TranspositionTable::clear() {
 
   for (std::thread& th : threads)
       th.join();
+#endif
 }
 
 

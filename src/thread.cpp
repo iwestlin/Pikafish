@@ -33,23 +33,33 @@ ThreadPool Threads; // Global object
 /// Thread constructor launches the thread and waits until it goes to sleep
 /// in idle_loop(). Note that 'searching' and 'exit' should be already set.
 
+#if defined(PIKAFISH_SINGLE_THREAD)
+Thread::Thread(size_t n) : idx(n) {
+  searching = false;
+}
+#else
 Thread::Thread(size_t n) : idx(n), stdThread(&Thread::idle_loop, this) {
-
   wait_for_search_finished();
 }
+#endif
 
 
 /// Thread destructor wakes up the thread in idle_loop() and waits
 /// for its termination. Thread should be already waiting.
 
+#if defined(PIKAFISH_SINGLE_THREAD)
 Thread::~Thread() {
-
+  assert(!searching);
+}
+#else
+Thread::~Thread() {
   assert(!searching);
 
   exit = true;
   start_searching();
   stdThread.join();
 }
+#endif
 
 
 /// Thread::clear() reset histories, usually before a new game
@@ -72,10 +82,17 @@ void Thread::clear() {
 /// Thread::start_searching() wakes up the thread that will start the search
 
 void Thread::start_searching() {
-
+#if defined(PIKAFISH_SINGLE_THREAD)
+  if (exit)
+      return;
+  searching = true;
+  search();
+  searching = false;
+#else
   std::lock_guard<std::mutex> lk(mutex);
   searching = true;
   cv.notify_one(); // Wake up the thread in idle_loop()
+#endif
 }
 
 
@@ -83,9 +100,12 @@ void Thread::start_searching() {
 /// until the thread has finished searching.
 
 void Thread::wait_for_search_finished() {
-
+#if defined(PIKAFISH_SINGLE_THREAD)
+  while (searching) {}
+#else
   std::unique_lock<std::mutex> lk(mutex);
   cv.wait(lk, [&]{ return !searching; });
+#endif
 }
 
 
@@ -93,7 +113,9 @@ void Thread::wait_for_search_finished() {
 /// condition variable, when it has no work to do.
 
 void Thread::idle_loop() {
-
+#if defined(PIKAFISH_SINGLE_THREAD)
+  return;
+#else
   // If OS already scheduled us on a different group than 0 then don't overwrite
   // the choice, eventually we are one of many one-threaded processes running on
   // some Windows NUMA hardware, for instance in fishtest. To make it simple,
@@ -116,6 +138,7 @@ void Thread::idle_loop() {
 
       search();
   }
+#endif
 }
 
 /// ThreadPool::set() creates/destroys threads to match the requested number.
@@ -123,6 +146,10 @@ void Thread::idle_loop() {
 /// Upon resizing, threads are recreated to allow for binding if necessary.
 
 void ThreadPool::set(size_t requested) {
+
+#if defined(PIKAFISH_SINGLE_THREAD)
+  requested = 1;
+#endif
 
   if (size() > 0)   // destroy any existing thread(s)
   {

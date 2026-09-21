@@ -209,6 +209,27 @@ can be found by typing the following command in a console:
     ./pikafish compiler
 ```
 
+### WebAssembly build
+
+A browser-ready WebAssembly build is included for the current non-NNUE evaluation:
+
+```bash
+make -C src wasm
+python3 tests/wasm-server.py --port 8787
+```
+
+Open `http://127.0.0.1:8787/` for a browser demo or `browser-test.html` for a smoke test.
+The server sets the cross-origin isolation headers required by WebAssembly threads.
+To run the same smoke test under Node.js:
+
+```bash
+node tests/wasm-smoke.mjs
+```
+
+The browser build runs in a dedicated Web Worker without `SharedArrayBuffer`, so it works
+without cross-origin isolation headers. It currently supports one search thread and a
+256 MB transposition-table ceiling. Change the TT ceiling with `PIKAFISH_WASM_MAX_HASH_MB`.
+
 ## Understanding the code base and participating in the project
 
 Pikafish's improvement over the last decade has been a great community

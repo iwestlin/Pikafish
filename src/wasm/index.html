@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pikafish WebAssembly</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+  body { max-width: 980px; margin: 24px auto; padding: 0 16px; background: #101014; color: #e7e7ea; }
+  main { display: grid; gap: 12px; }
+  button { padding: 8px 14px; border: 0; border-radius: 6px; background: #3f6ad8; color: white; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  pre { min-height: 340px; max-height: 60vh; overflow: auto; background: #17171d; border-radius: 8px; padding: 14px; white-space: pre-wrap; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+<main>
+  <h1>Pikafish WebAssembly</h1>
+  <p id="status">正在加载引擎…</p>
+  <div class="row">
+    <button id="start" disabled>初始化</button>
+    <button id="search" disabled>搜索 depth 7</button>
+    <button id="stop" disabled>停止</button>
+    <a href="./browser-test.html">运行浏览器冒烟测试</a>
+  </div>
+  <pre id="log"></pre>
+</main>
+<script type="module">
+  import { PikafishEngine } from './pikafish-engine.js';
+
+  const status = document.getElementById('status');
+  const log = document.getElementById('log');
+  const start = document.getElementById('start');
+  const search = document.getElementById('search');
+  const stop = document.getElementById('stop');
+  let engine;
+
+  const append = (line) => { log.textContent += `${line}\n`; log.scrollTop = log.scrollHeight; };
+
+  start.disabled = false;
+  status.textContent = '点击初始化启动 1 线程 / 64 MB TT';
+
+  start.onclick = async () => {
+    start.disabled = true;
+    engine = new PikafishEngine();
+    engine.onOutput((message) => {
+      const text = message.line ?? message.error;
+      if (typeof text === 'string' && text) append(text);
+    });
+    try {
+      await engine.start({ threads: 1, hashMB: 64 });
+      await engine.waitFor((message) => message.line?.includes('uciok'));
+      status.textContent = '引擎已就绪';
+      search.disabled = false;
+      stop.disabled = false;
+    } catch (error) {
+      status.textContent = `初始化失败：${error.message}`;
+    }
+  };
+
+  search.onclick = async () => {
+    search.disabled = true;
+    engine.send('position startpos');
+    engine.send('go depth 7');
+    await engine.waitFor((message) => message.line?.startsWith('bestmove '), 60000);
+    search.disabled = false;
+  };
+
+  stop.onclick = () => engine?.stop();
+</script>

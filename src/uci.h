@@ -21,6 +21,7 @@
 
 #include <map>
 #include <string>
+#include <memory>
 
 #include "types.h"
 
@@ -69,6 +70,22 @@ private:
 
 void init(OptionsMap&);
 void loop(int argc, char* argv[]);
+
+/// A reusable UCI state machine for hosts that cannot expose a blocking stdin.
+class EngineSession {
+public:
+  EngineSession();
+  ~EngineSession();
+
+  bool execute(const std::string& command);
+  bool should_quit() const;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+  bool quit = false;
+};
+
 std::string value(Value v);
 std::string square(Square s);
 std::string move(Move m);

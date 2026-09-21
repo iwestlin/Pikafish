@@ -3,6 +3,8 @@
 **/*.s
 src/.depend
 src/*.bak
+.emsdk/
+src/wasm/build/
 
 # Files from Qt
 *.pro
@@ -18,4 +20,3 @@ src/-lstdc++.res
 
 # Neural network for the NNUE evaluation
 **/*.nnue
-

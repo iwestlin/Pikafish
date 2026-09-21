@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pikafish Browser Test</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 32px auto; padding: 0 16px; }
+  pre { background: #f4f4f5; padding: 16px; white-space: pre-wrap; max-height: 55vh; overflow: auto; }
+  #result { font-weight: 700; }
+  button { padding: 8px 16px; }
+</style>
+<button id="run">运行测试</button>
+<p id="result">未运行</p>
+<pre id="log"></pre>
+<script type="module">
+  import { PikafishEngine } from './pikafish-engine.js';
+
+  const log = document.getElementById('log');
+  const result = document.getElementById('result');
+  const append = (line) => { log.textContent += `${line}\n`; };
+
+  async function runTest() {
+    document.getElementById('run').disabled = true;
+    result.textContent = '运行中…';
+    log.textContent = '';
+    let engine;
+    try {
+      engine = new PikafishEngine();
+      engine.onOutput((message) => {
+        const text = message.line ?? message.error;
+        if (typeof text === 'string' && text) append(text);
+      });
+      await engine.start({ threads: 1, hashMB: 16 });
+      engine.send('uci');
+      await engine.waitFor((message) => message.line?.includes('uciok'), 20000);
+      engine.send('isready');
+      await engine.waitFor((message) => message.line === 'readyok', 20000);
+      engine.send('position startpos');
+      engine.send('go depth 5');
+      const bestMove = await engine.waitFor(
+        (message) => message.line?.startsWith('bestmove '), 60000
+      );
+      if (!/bestmove [a-i][0-9][a-i][0-9]/.test(bestMove.line)) {
+        throw new Error(`Unexpected bestmove: ${bestMove.line}`);
+      }
+      result.textContent = 'PASS';
+      result.dataset.status = 'pass';
+    } catch (error) {
+      result.textContent = `FAIL: ${error.message}`;
+      result.dataset.status = 'fail';
+    } finally {
+      engine?.terminate();
+      document.getElementById('run').disabled = false;
+    }
+  }
+
+  document.getElementById('run').onclick = runTest;
+  window.pikafishBrowserTest = runTest;
+  if (new URLSearchParams(location.search).has('auto')) {
+    // The CDP test passes auto=0 and calls the exported promise directly.
+    runTest();
+  }
+</script>

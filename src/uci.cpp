@@ -262,6 +262,82 @@ namespace {
 } // namespace
 
 
+struct UCI::EngineSession::Impl {
+  StateListPtr states;
+  Position pos;
+  std::vector<Move> banmoves;
+};
+
+UCI::EngineSession::EngineSession() : impl_(new Impl) {
+  impl_->states = StateListPtr(new std::deque<StateInfo>(1));
+  impl_->pos.set(StartFEN, &impl_->states->back(), Threads.main());
+}
+
+UCI::EngineSession::~EngineSession() = default;
+
+bool UCI::EngineSession::execute(const std::string& command) {
+  Position& pos = impl_->pos;
+  StateListPtr& states = impl_->states;
+  std::vector<Move>& banmoves = impl_->banmoves;
+  std::istringstream is(command);
+  std::string token;
+
+  is >> skipws >> token;
+
+  if (token == "quit" || token == "stop")
+      Threads.stop = true;
+  else if (token == "ponderhit")
+      Threads.main()->ponder = false;
+  else if (token == "uci")
+      sync_cout << "id name " << engine_info(true)
+                << "\n"       << Options
+                << "\nuciok"  << sync_endl;
+  else if (token == "setoption")  setoption(is);
+  else if (token == "banmoves")
+      while (is >> token)
+          banmoves.push_back(UCI::to_move(pos, token));
+  else if (token == "go")         go(pos, is, states, banmoves), banmoves.clear();
+  else if (token == "position")   position(pos, is, states);
+  else if (token == "fen" || token == "startpos") is.seekg(0), position(pos, is, states);
+  else if (token == "ucinewgame") Search::clear();
+  else if (token == "isready")    sync_cout << "readyok" << sync_endl;
+  else if (token == "flip")       pos.flip();
+  else if (token == "bench")      bench(pos, is, states);
+  else if (token == "d")          sync_cout << pos << sync_endl;
+  else if (token == "s") {
+      std::istringstream depthCommand(" depth 4");
+      go(pos, depthCommand, states);
+      sync_cout << pos << sync_endl;
+  }
+  else if (token == "eval")       trace_eval(pos);
+  else if (token == "compiler")   sync_cout << compiler_info() << sync_endl;
+  else if (token == "export_net")
+  {
+      std::optional<std::string> filename;
+      std::string file;
+      if (is >> skipws >> file)
+          filename = file;
+      Eval::NNUE::save_eval(filename);
+  }
+  else if (token == "--help" || token == "help" || token == "--license" || token == "license")
+      sync_cout << "\nPikafish is a powerful xiangqi engine for playing and analyzing."
+                   "\nIt is released as free software licensed under the GNU GPLv3 License."
+                   "\nPikafish is normally used with a graphical user interface (GUI) and implements"
+                   "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
+                   "\nFor any further information, visit https://github.com/PikaCat-OuO/Pikafish#readme"
+                   "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n" << sync_endl;
+  else if (!token.empty() && token[0] != '#')
+      sync_cout << "Unknown command: '" << command << "'. Type help for more information." << sync_endl;
+
+  quit = token == "quit";
+  return !quit;
+}
+
+bool UCI::EngineSession::should_quit() const {
+  return quit;
+}
+
+
 /// UCI::loop() waits for a command from the stdin, parses it and then calls the appropriate
 /// function. It also intercepts an end-of-file (EOF) indication from the stdin to ensure a
 /// graceful exit if the GUI dies unexpectedly. When called with some command-line arguments, 
@@ -269,84 +345,22 @@ namespace {
 /// In addition to the UCI ones, some additional debug commands are also supported.
 
 void UCI::loop(int argc, char* argv[]) {
-
-  Position pos;
   string token, cmd;
-  StateListPtr states(new std::deque<StateInfo>(1));
-
-  pos.set(StartFEN, &states->back(), Threads.main());
+  EngineSession session;
 
   for (int i = 1; i < argc; ++i)
       cmd += std::string(argv[i]) + " ";
 
-  std::vector<Move> banmoves = {};
+  if (argc > 1) {
+      session.execute(cmd);
+      return;
+  }
 
-  do {
-      if (argc == 1 && !getline(cin, cmd)) // Wait for an input or an end-of-file (EOF) indication
+  while (!session.should_quit()) {
+      if (!getline(cin, cmd)) // Wait for an input or an end-of-file (EOF) indication
           cmd = "quit";
-
-      istringstream is(cmd);
-
-      token.clear(); // Avoid a stale if getline() returns nothing or a blank line
-      is >> skipws >> token;
-
-      if (    token == "quit"
-          ||  token == "stop")
-          Threads.stop = true;
-
-      // The GUI sends 'ponderhit' to tell that the user has played the expected move.
-      // So, 'ponderhit' is sent if pondering was done on the same move that the user
-      // has played. The search should continue, but should also switch from pondering
-      // to the normal search.
-      else if (token == "ponderhit")
-          Threads.main()->ponder = false; // Switch to the normal search
-
-      else if (token == "uci")
-          sync_cout << "id name " << engine_info(true)
-                    << "\n"       << Options
-                    << "\nuciok"  << sync_endl;
-
-      else if (token == "setoption")  setoption(is);
-      else if (token == "banmoves")
-          while (is >> token)
-              banmoves.push_back(UCI::to_move(pos, token));
-      else if (token == "go")         go(pos, is, states, banmoves), banmoves.clear();
-      else if (token == "position")   position(pos, is, states);
-      else if (token == "fen" || token == "startpos") is.seekg(0), position(pos, is, states);
-      else if (token == "ucinewgame") Search::clear();
-      else if (token == "isready")    sync_cout << "readyok" << sync_endl;
-
-      // Add custom non-UCI commands, mainly for debugging purposes.
-      // These commands must not be used during a search!
-      else if (token == "flip")     pos.flip();
-      else if (token == "bench")    bench(pos, is, states);
-      else if (token == "d")        sync_cout << pos << sync_endl;
-      else if (token == "s") {
-          istringstream is2(" depth 4");
-          go(pos, is2, states);
-          sync_cout << pos << sync_endl;
-      }
-      else if (token == "eval")     trace_eval(pos);
-      else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
-      else if (token == "export_net")
-      {
-          std::optional<std::string> filename;
-          std::string f;
-          if (is >> skipws >> f)
-              filename = f;
-          Eval::NNUE::save_eval(filename);
-      }
-      else if (token == "--help" || token == "help" || token == "--license" || token == "license")
-          sync_cout << "\nPikafish is a powerful xiangqi engine for playing and analyzing."
-                       "\nIt is released as free software licensed under the GNU GPLv3 License."
-                       "\nPikafish is normally used with a graphical user interface (GUI) and implements"
-                       "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
-                       "\nFor any further information, visit https://github.com/PikaCat-OuO/Pikafish#readme"
-                       "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n" << sync_endl;
-      else if (!token.empty() && token[0] != '#')
-          sync_cout << "Unknown command: '" << cmd << "'. Type help for more information." << sync_endl;
-
-  } while (token != "quit" && argc == 1); // The command-line arguments are one-shot
+      session.execute(cmd);
+  }
 }
 
 

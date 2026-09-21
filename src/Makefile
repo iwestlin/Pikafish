@@ -856,6 +856,42 @@ default:
 
 all: $(EXE) .depend
 
+### ==========================================================================
+### WebAssembly target
+### ==========================================================================
+
+EMSDK ?= ../.emsdk
+EMCC ?= $(EMSDK)/upstream/emscripten/emcc
+WASM_OUT ?= wasm/build
+WASM_ENTRY ?= $(WASM_OUT)/pikafish.js
+WASM_MAX_THREADS ?= 1
+WASM_EXTRA_FLAGS ?=
+PIKAFISH_WASM_MAX_HASH_MB ?= 256
+
+WASM_SRCS = benchmark.cpp bitboard.cpp evaluate.cpp material.cpp \
+	misc.cpp movegen.cpp movepick.cpp position.cpp psqt.cpp \
+	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp \
+	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2_hm.cpp \
+	compression/zip.cpp wasm_api.cpp
+
+.PHONY: wasm wasm-clean
+
+wasm:
+	mkdir -p $(WASM_OUT)
+	$(EMCC) -O3 -std=c++17 -fno-exceptions -DNDEBUG -DIS_64BIT -DNO_PREFETCH \
+		-DPIKAFISH_WASM_MAX_THREADS=$(WASM_MAX_THREADS) -DPIKAFISH_SINGLE_THREAD=1 \
+		-DPIKAFISH_WASM_MAX_HASH_MB=$(PIKAFISH_WASM_MAX_HASH_MB) \
+		-I. -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB \
+		-sSTACK_SIZE=4MB \
+		-sENVIRONMENT=web,worker,node -sEXPORT_ES6=1 -sMODULARIZE=1 \
+		-sEXPORT_NAME=createPikafishModule -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
+		-sEXPORTED_FUNCTIONS='["_malloc","_free","_pikafish_init","_pikafish_command","_pikafish_stop"]' \
+		$(WASM_EXTRA_FLAGS) \
+		-o $(WASM_ENTRY) $(WASM_SRCS)
+
+wasm-clean:
+	rm -rf $(WASM_OUT)
+
 config-sanity: net
 	@echo ""
 	@echo "Config:"

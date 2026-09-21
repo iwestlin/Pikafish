@@ -55,7 +55,13 @@ bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const 
 
 void init(OptionsMap& o) {
 
-  constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
+  constexpr int MaxHashMB =
+#if defined(__EMSCRIPTEN__)
+    PIKAFISH_WASM_MAX_HASH_MB
+#else
+    Is64Bit ? 33554432 : 2048
+#endif
+    ;
 
   o["Debug Log File"]        << Option("", on_logger);
   o["Threads"]               << Option(1, 1, 1024, on_threads);
